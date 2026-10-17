@@ -2,7 +2,7 @@
 
 여러 집의 월별 수도 요금을 한 번에 계산하는 Android 다크모드 앱 **수도계산기**입니다.
 
-**[설치용 테스트 APK 다운로드 (ZIP)](https://github.com/Dmng0/Water_Tax_Acount/actions/runs/39015357623/artifacts/12094217801)**
+**[수도계산기 1.1.0 테스트 APK 다운로드 (ZIP)](https://github.com/Dmng0/Water_Tax_Acount/actions/runs/39021525327/artifacts/12096628912)**
 
 GitHub 로그인 후 ZIP을 받아 압축을 풀고 `app-debug.apk`를 설치하세요. 이 테스트 APK는 2027-01-15까지 보관됩니다. 실제 기기 화면 조작은 아직 검증하지 않았습니다. 정식 배포판과 서명이 달라 나중에 정식판 설치 시 테스트 앱을 먼저 제거해야 할 수 있으며, 제거하면 기기 내 기록도 삭제됩니다.
 
