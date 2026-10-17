@@ -3,6 +3,8 @@ package kr.water.calculator;
 import android.app.*;
 import android.os.Bundle;
 import android.content.SharedPreferences;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -15,6 +17,7 @@ import org.json.*;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.time.YearMonth;
+import java.time.LocalDate;
 import java.util.*;
 
 public class MainActivity extends Activity {
@@ -24,7 +27,10 @@ public class MainActivity extends Activity {
     private String rate="", fee="", month=YearMonth.now().toString();
     private boolean configured=false, ready=false;
     private SharedPreferences prefs;
-    private LinearLayout root, houseList;
+    private LinearLayout root, houseList, noticePanel;
+    private ScrollView mainScroll;
+    private TextView noticeText;
+    private String lastNotice="";
     private TextView summary, monthLabel, rateLabel;
     private final DecimalFormat money=new DecimalFormat("#,##0");
     private static class House {
@@ -40,6 +46,7 @@ public class MainActivity extends Activity {
             JSONObject data=new JSONObject(prefs.getString("state","{}"));
             rate=data.optString("rate");fee=data.optString("fee");configured=data.optBoolean("configured");
             month=data.optString("month",month);
+            lastNotice=data.optString("lastNotice");
             JSONArray a=data.optJSONArray("houses");
             if(a!=null) for(int i=0;i<a.length();i++) houses.add(House.read(a.getJSONObject(i)));
             if(data.optJSONArray("history")!=null) history=data.getJSONArray("history");
@@ -59,7 +66,7 @@ public class MainActivity extends Activity {
     private EditText input(String hint,String value,boolean numeric){EditText e=new EditText(this);e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setTextSize(17);e.setSingleLine(true);e.setHint(hint);e.setInputType(numeric?android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL:android.text.InputType.TYPE_CLASS_TEXT);e.setFilters(new InputFilter[]{new InputFilter.LengthFilter(numeric?16:40)});e.setText(value);e.setPadding(dp(10),dp(10),dp(10),dp(10));return e;}
     private interface Change {void set(String s);}
     private void watch(EditText e,Change c){e.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){c.set(s.toString());invalidateResults();save(false);}public void afterTextChanged(Editable x){}});}
-    private JSONObject state() throws JSONException {JSONArray a=new JSONArray();for(House h:houses)a.put(h.json());return new JSONObject().put("rate",rate).put("fee",fee).put("configured",configured).put("month",month).put("houses",a).put("history",history);}
+    private JSONObject state() throws JSONException {JSONArray a=new JSONArray();for(House h:houses)a.put(h.json());return new JSONObject().put("rate",rate).put("fee",fee).put("configured",configured).put("month",month).put("houses",a).put("history",history).put("lastNotice",lastNotice);}
     private boolean save(boolean synchronous){if(!ready)return false;try{SharedPreferences.Editor e=prefs.edit().putString("state",state().toString());if(synchronous){boolean ok=e.commit();if(!ok)toast("저장 공간을 확인해 주세요. 기록을 저장하지 못했습니다.");return ok;}e.apply();return true;}catch(JSONException e){toast("저장 중 오류가 발생했습니다.");return false;}}
     @Override protected void onPause(){super.onPause();save(true);}
     private void render(){
@@ -71,15 +78,22 @@ public class MainActivity extends Activity {
         Button hist=button("◷ 기록",false);hist.setContentDescription("계산 기록 사이드바 열기");hist.setOnClickListener(v->showHistory());bar.addView(hist);
         TextView app=title("수도계산기",21);app.setGravity(Gravity.CENTER);bar.addView(app,new LinearLayout.LayoutParams(0,dp(56),1));
         Button settings=button("요금 설정",false);settings.setOnClickListener(v->settings(false));bar.addView(settings);root.addView(bar);
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout content=column();scroll.addView(content);
+        ScrollView scroll=new ScrollView(this);mainScroll=scroll;scroll.setFillViewport(true);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout content=column();scroll.addView(content);
         gap(content,22);content.addView(label("MONTHLY WATER BILL",11,ACCENT));content.addView(title("이번 달 수도 요금",28));
         monthLabel=label(month+"  ▾",18,TEXT);monthLabel.setContentDescription("계산 월 선택");monthLabel.setPadding(0,dp(12),0,dp(12));monthLabel.setOnClickListener(v->chooseMonth());content.addView(monthLabel);
         rateLabel=label("수도세 "+rate+" 원 / 사용량 1단위  ·  관리비 "+fee+" 원",13,MUTED);content.addView(rateLabel);gap(content,14);
         houseList=column();content.addView(houseList);for(House h:houses)addCard(h);
         Button add=button("+ 집 추가",false);add.setOnClickListener(v->{House h=new House();h.name="집 "+(houses.size()+1);houses.add(h);addCard(h);invalidateResults();save(false);});content.addView(add,new LinearLayout.LayoutParams(-1,dp(52)));
         gap(content,16);content.addView(label("(이번달 − 지난달) × 수도세 + 관리비\n요금 설정은 모든 집에 공통 적용됩니다.",12,MUTED));gap(content,12);
-        summary=title("계량기 수치를 입력해 주세요",18);root.addView(summary);
-        Button calculate=button("계산하고 기록 저장",true);calculate.setOnClickListener(v->calculate());root.addView(calculate,new LinearLayout.LayoutParams(-1,dp(56)));
+        summary=title("계량기 수치를 입력해 주세요",18);content.addView(summary);
+        Button calculate=button("계산하고 기록 저장",true);calculate.setOnClickListener(v->calculate());content.addView(calculate,new LinearLayout.LayoutParams(-1,dp(56)));
+        noticePanel=column();noticePanel.setPadding(dp(16),dp(16),dp(16),dp(16));noticePanel.setBackground(shape(CARD,20));
+        LinearLayout.LayoutParams noticeLayout=new LinearLayout.LayoutParams(-1,-2);noticeLayout.topMargin=dp(20);content.addView(noticePanel,noticeLayout);
+        noticePanel.addView(title("납부 안내문",20));
+        noticeText=label(lastNotice,16,TEXT);noticeText.setTextIsSelectable(true);noticePanel.addView(noticeText);
+        Button copy=button("안내문 전체 복사",true);copy.setOnClickListener(v->{if(lastNotice.isEmpty())return;ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("수도요금 납부 안내문",lastNotice));toast("납부 안내문을 복사했습니다.");});
+        noticePanel.addView(copy,new LinearLayout.LayoutParams(-1,dp(52)));
+        noticePanel.setVisibility(lastNotice.isEmpty()?View.GONE:View.VISIBLE);
     }
     private void addCard(House h){
         LinearLayout card=column();card.setPadding(dp(16),dp(12),dp(16),dp(16));card.setBackground(shape(CARD,20));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.bottomMargin=dp(12);houseList.addView(card,cp);
@@ -87,11 +101,11 @@ public class MainActivity extends Activity {
         Button del=button("삭제",false);del.setTextColor(0xffffa7a7);del.setContentDescription(h.name+" 삭제");del.setOnClickListener(v->{if(houses.size()==1){toast("계산할 집은 최소 한 개가 필요합니다.");return;}new AlertDialog.Builder(this).setTitle("집을 삭제할까요?").setMessage(h.name+"의 작성 중인 입력이 삭제됩니다. 과거 계산 기록은 보관됩니다.").setNegativeButton("취소",null).setPositiveButton("삭제",(d,w)->{houses.remove(h);houseList.removeView(card);invalidateResults();save(false);}).show();});header.addView(del);card.addView(header);
         LinearLayout row=new LinearLayout(this);LinearLayout left=column(),right=column();left.addView(label("지난달 계량기 수치",12,MUTED));right.addView(label("이번달 계량기 수치",12,ACCENT));EditText prev=input("예: 120",h.previous,true),curr=input("예: 135",h.current,true);prev.setContentDescription(h.name+" 지난달 계량기 수치");curr.setContentDescription(h.name+" 이번달 계량기 수치");left.addView(prev);right.addView(curr);watch(prev,s->h.previous=s);watch(curr,s->h.current=s);row.addView(left,new LinearLayout.LayoutParams(0,-2,1));row.addView(right,new LinearLayout.LayoutParams(0,-2,1));card.addView(row);h.result=label("사용량과 요금은 계산 후 표시됩니다",14,MUTED);card.addView(h.result);
     }
-    private void invalidateResults(){if(summary!=null)summary.setText("입력 변경 · 다시 계산해 주세요");for(House h:houses)if(h.result!=null)h.result.setText("사용량과 요금은 계산 후 표시됩니다");}
+    private void invalidateResults(){lastNotice="";if(noticeText!=null)noticeText.setText("");if(noticePanel!=null)noticePanel.setVisibility(View.GONE);if(summary!=null)summary.setText("입력 변경 · 다시 계산해 주세요");for(House h:houses)if(h.result!=null)h.result.setText("사용량과 요금은 계산 후 표시됩니다");}
     private void settings(boolean first){
         LinearLayout box=column();box.setPadding(dp(24),dp(12),dp(24),dp(8));box.addView(label("사용량 1단위당 수도세 (원)",14,MUTED));EditText r=input("예: 1000",rate,true);box.addView(r);box.addView(label("집 한 곳당 월 관리비 (원)",14,MUTED));EditText f=input("예: 5000 (없으면 0)",fee,true);box.addView(f);
         AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle(first?"처음 한 번, 요금을 설정해 주세요":"요금 설정").setView(box).setPositiveButton("저장",null).setCancelable(!first);if(!first)builder.setNegativeButton("취소",null);
-        AlertDialog dialog=builder.create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{Billing.number(r.getText().toString());Billing.number(f.getText().toString());}catch(IllegalArgumentException e){toast(e.getMessage());return;}rate=r.getText().toString().trim();fee=f.getText().toString().trim();configured=true;if(save(true)){dialog.dismiss();rateLabel.setText("수도세 "+rate+" 원 / 사용량 1단위  ·  관리비 "+fee+" 원");invalidateResults();}}));dialog.show();
+        AlertDialog dialog=builder.create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{Billing.number(r.getText().toString());Billing.number(f.getText().toString());}catch(IllegalArgumentException e){toast(e.getMessage());return;}rate=r.getText().toString().trim();fee=f.getText().toString().trim();configured=true;if(save(true)){dialog.dismiss();rateLabel.setText("수도세 "+rate+" 원 / 사용량 1단위  ·  관리비 "+fee+" 원");invalidateResults();save(false);}}));dialog.show();
     }
     private void chooseMonth(){LinearLayout box=new LinearLayout(this);box.setPadding(dp(24),dp(12),dp(24),dp(12));NumberPicker y=new NumberPicker(this),m=new NumberPicker(this);y.setMinValue(2000);y.setMaxValue(2100);YearMonth ym=YearMonth.parse(month);y.setValue(ym.getYear());m.setMinValue(1);m.setMaxValue(12);m.setValue(ym.getMonthValue());box.addView(y,new LinearLayout.LayoutParams(0,-2,1));box.addView(m,new LinearLayout.LayoutParams(0,-2,1));new AlertDialog.Builder(this).setTitle("계산할 연도 · 월").setView(box).setNegativeButton("취소",null).setPositiveButton("선택",(d,w)->{y.clearFocus();m.clearFocus();month=YearMonth.of(y.getValue(),m.getValue()).toString();monthLabel.setText(month+"  ▾");invalidateResults();save(false);}).show();}
     private void calculate(){
@@ -101,10 +115,12 @@ public class MainActivity extends Activity {
         record();
     }
     private void record(){
-        try{JSONArray entries=new JSONArray();BigDecimal sum=BigDecimal.ZERO;for(House h:houses){BigDecimal total=Billing.total(h.previous,h.current,rate,fee);sum=sum.add(total);entries.put(h.json().put("total",total.toPlainString()).put("usage",Billing.usage(h.previous,h.current).toPlainString()));}
-            JSONObject entry=new JSONObject().put("id",UUID.randomUUID().toString()).put("month",month).put("createdAt",System.currentTimeMillis()).put("rate",rate).put("fee",fee).put("houses",entries).put("total",sum.toPlainString());
-            JSONArray before=history;history=new JSONArray();history.put(entry);for(int i=0;i<before.length();i++)history.put(before.get(i));if(!save(true)){history=before;return;}
-            for(House h:houses){h.result.setText("사용량 "+Billing.usage(h.previous,h.current).stripTrailingZeros().toPlainString()+"  ·  "+money.format(Billing.total(h.previous,h.current,rate,fee))+" 원");h.result.setTextColor(ACCENT);}summary.setText(houses.size()+"개 집 합계  "+money.format(sum)+" 원");toast("계산 기록을 저장했습니다.");
+        try{JSONArray entries=new JSONArray();ArrayList<PaymentNotice.Item> noticeItems=new ArrayList<>();BigDecimal sum=BigDecimal.ZERO;for(House h:houses){BigDecimal total=Billing.total(h.previous,h.current,rate,fee);sum=sum.add(total);noticeItems.add(new PaymentNotice.Item(h.name,Billing.usage(h.previous,h.current),total));entries.put(h.json().put("total",total.toPlainString()).put("usage",Billing.usage(h.previous,h.current).toPlainString()));}
+            String completedNotice=PaymentNotice.format(LocalDate.now(),noticeItems);
+            JSONObject entry=new JSONObject().put("notice",completedNotice).put("id",UUID.randomUUID().toString()).put("month",month).put("createdAt",System.currentTimeMillis()).put("rate",rate).put("fee",fee).put("houses",entries).put("total",sum.toPlainString());
+            String previousNotice=lastNotice;lastNotice=completedNotice;JSONArray before=history;history=new JSONArray();history.put(entry);for(int i=0;i<before.length();i++)history.put(before.get(i));if(!save(true)){history=before;lastNotice=previousNotice;return;}
+            for(House h:houses){h.result.setText("사용량 "+Billing.usage(h.previous,h.current).stripTrailingZeros().toPlainString()+"  ·  "+money.format(Billing.total(h.previous,h.current,rate,fee))+" 원");h.result.setTextColor(ACCENT);}summary.setText(houses.size()+"개 집 합계  "+money.format(sum)+" 원");noticeText.setText(lastNotice);noticePanel.setVisibility(View.VISIBLE);toast("계산 기록과 납부 안내문을 저장했습니다.");
+            mainScroll.postDelayed(()->mainScroll.fullScroll(View.FOCUS_DOWN),200);
             View focused=getCurrentFocus();if(focused!=null)((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(focused.getWindowToken(),0);
         }catch(JSONException|IllegalArgumentException e){toast("계산 기록을 만들지 못했습니다: "+e.getMessage());}
     }
@@ -118,5 +134,5 @@ public class MainActivity extends Activity {
         }
         drawer.setContentView(panel);Window window=drawer.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);WindowManager.LayoutParams attrs=window.getAttributes();attrs.dimAmount=0.6f;window.setAttributes(attrs);window.setGravity(Gravity.LEFT|Gravity.TOP);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(24),dp(380)),WindowManager.LayoutParams.MATCH_PARENT);}drawer.show();if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(24),dp(380)),WindowManager.LayoutParams.MATCH_PARENT);
     }
-    private void applyHistory(JSONObject record){try{JSONArray a=record.getJSONArray("houses");for(int i=0;i<a.length();i++){JSONObject saved=a.getJSONObject(i);House target=null;for(House h:houses)if(h.id.equals(saved.getString("id"))){target=h;break;}if(target==null){target=House.read(saved);houses.add(target);}target.previous=saved.getString("current");target.current="";}month=YearMonth.parse(record.getString("month")).plusMonths(1).toString();save(true);render();toast("지난달 수치를 채웠습니다. 이번달 수치를 입력해 주세요.");}catch(JSONException e){toast("기록을 불러오지 못했습니다.");}}
+    private void applyHistory(JSONObject record){try{JSONArray a=record.getJSONArray("houses");for(int i=0;i<a.length();i++){JSONObject saved=a.getJSONObject(i);House target=null;for(House h:houses)if(h.id.equals(saved.getString("id"))){target=h;break;}if(target==null){target=House.read(saved);houses.add(target);}target.previous=saved.getString("current");target.current="";}month=YearMonth.parse(record.getString("month")).plusMonths(1).toString();lastNotice="";save(true);render();toast("지난달 수치를 채웠습니다. 이번달 수치를 입력해 주세요.");}catch(JSONException e){toast("기록을 불러오지 못했습니다.");}}
 }

@@ -15,7 +15,8 @@ GitHub 로그인 후 ZIP을 받아 압축을 풀고 `app-debug.apk`를 설치하
 1. 처음 실행하면 수도세 단가와 월 관리비를 입력합니다. 설정은 기기에 저장되며 상단 ‘요금 설정’에서 수정할 수 있습니다.
 2. 처음에는 집 한 개가 표시됩니다. ‘+ 집 추가’로 늘리고, 각 집의 ‘삭제’로 제거합니다. 집 이름도 바꿀 수 있습니다.
 3. 계산 월을 고르고 집마다 지난달·이번달 계량기 수치를 입력한 다음 ‘계산하고 기록 저장’을 누릅니다.
-4. 왼쪽 상단 기록 버튼으로 사이드바를 엽니다. 기록을 누르면 당시 각 집의 이번달 수치가 현재 지난달 수치로 입력됩니다. 삭제했던 집은 같은 식별자로 복원됩니다. 기존 이번달 입력은 비워지고 계산 월은 기록의 다음 달로 바뀝니다.
+4. 계산이 끝나면 화면 맨 아래에 납부 안내문이 표시됩니다. ‘안내문 전체 복사’로 모든 집의 내용을 한 번에 복사하거나 텍스트를 길게 눌러 선택할 수 있습니다. 안내문은 계산 완료 날짜의 월을 사용하며, 집마다 실제 사용량(`이번달 − 지난달`, `t`)과 최종 납부액을 표시합니다. 입력을 수정하면 기존 안내문을 숨기며 다시 계산해야 합니다. 마지막 안내문은 앱을 다시 열어도 유지됩니다.
+5. 왼쪽 상단 기록 버튼으로 사이드바를 엽니다. 기록을 누르면 당시 각 집의 이번달 수치가 현재 지난달 수치로 입력됩니다. 삭제했던 집은 같은 식별자로 복원됩니다. 기존 이번달 입력은 비워지고 계산 월은 기록의 다음 달로 바뀝니다.
 
 계산식: **(이번달 계량기 수치 − 지난달 계량기 수치) × 수도세 단가 + 관리비**
 
@@ -49,6 +50,7 @@ base64 -w 0 water-release.jks
 
 ```sh
 mkdir -p /tmp/water-tests
-javac -d /tmp/water-tests app/src/main/java/kr/water/calculator/Billing.java tests/BillingTest.java
+javac -d /tmp/water-tests app/src/main/java/kr/water/calculator/Billing.java app/src/main/java/kr/water/calculator/PaymentNotice.java tests/*.java
 java -cp /tmp/water-tests kr.water.calculator.BillingTest
+java -cp /tmp/water-tests kr.water.calculator.PaymentNoticeTest
 ```

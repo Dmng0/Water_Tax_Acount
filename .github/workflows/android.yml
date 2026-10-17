@@ -32,8 +32,9 @@ jobs:
       - name: Verify billing rules
         run: |
           mkdir -p /tmp/water-tests
-          javac -d /tmp/water-tests app/src/main/java/kr/water/calculator/Billing.java tests/BillingTest.java
+          javac -d /tmp/water-tests app/src/main/java/kr/water/calculator/Billing.java app/src/main/java/kr/water/calculator/PaymentNotice.java tests/*.java
           java -cp /tmp/water-tests kr.water.calculator.BillingTest
+          java -cp /tmp/water-tests kr.water.calculator.PaymentNoticeTest
       - name: Build debug APK and lint
         run: gradle --no-daemon :app:assembleDebug :app:lintDebug
       - uses: actions/upload-artifact@v4
